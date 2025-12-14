@@ -36,6 +36,17 @@ app.get("/", (req, res) => {
   res.send("server is  working");
 });
 
+    app.post("/api/services", verifyToken, verifyAdmin, async (req, res) => {
+      const service = {
+        ...req.body,
+        createdAt: new Date(),
+        bookingCount: 0,
+      };
+
+      const result = await servicesCollection.insertOne(service);
+      res.send(result);
+    });
+
 app.listen(port, () => {
   console.log(`port is running on ${port}`);
 });
