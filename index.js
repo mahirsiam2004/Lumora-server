@@ -26,6 +26,18 @@ async function run() {
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
+
+    const database = client.db("lumoraDB");
+    usersCollection = database.collection("users");
+    servicesCollection = database.collection("services");
+    bookingsCollection = database.collection("bookings");
+    paymentsCollection = database.collection("payments");
+    reviewsCollection = database.collection("reviews");
+
+
+
+
+
   } finally {
     // await client.close();
   }
