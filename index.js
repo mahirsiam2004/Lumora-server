@@ -49,8 +49,31 @@ async function run() {
       res.send(decorators);
     });
 
+    // Update Decorator Profile
+    app.patch(
+      "/api/decorators/:email",
+      verifyToken,
+      verifyDecorator,
+      async (req, res) => {
+        const email = req.params.email;
+        const updates = req.body;
 
+        if (email !== req.user.email) {
+          return res.status(403).send({ message: "Forbidden access" });
+        }
 
+        const filter = { email };
+        const updateDoc = {
+          $set: {
+            ...updates,
+            updatedAt: new Date(),
+          },
+        };
+
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      }
+    );
   } finally {
     // await client.close();
   }
