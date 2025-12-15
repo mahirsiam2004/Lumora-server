@@ -34,7 +34,20 @@ async function run() {
     paymentsCollection = database.collection("payments");
     reviewsCollection = database.collection("reviews");
 
+    app.get("/api/decorators", async (req, res) => {
+      const { search } = req.query;
+      let query = { role: "decorator", isApproved: true };
 
+      if (search) {
+        query.$or = [
+          { displayName: { $regex: search, $options: "i" } },
+          { specialty: { $regex: search, $options: "i" } },
+        ];
+      }
+
+      const decorators = await usersCollection.find(query).toArray();
+      res.send(decorators);
+    });
 
 
 
