@@ -1,20 +1,22 @@
 {
-  "name": "backend",
+  "name": "lumora-server",
   "version": "1.0.0",
-  "description": "",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
-  
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
+    "express": "^4.18.2",
+    "mongodb": "^6.3.0",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.2.1",
-    "mongodb": "^7.0.0"
+    "dotenv": "^16.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "stripe": "^14.15.0",
+    "cookie-parser": "^1.4.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
   }
 }
