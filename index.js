@@ -34,7 +34,7 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@smart-d
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
-    strict: true,
+    strict: false,
     deprecationErrors: true,
   },
 });
@@ -513,11 +513,9 @@ async function run() {
       }
 
       if (booking.isPaid) {
-        return res
-          .status(400)
-          .send({
-            message: "Cannot cancel paid booking. Please contact support.",
-          });
+        return res.status(400).send({
+          message: "Cannot cancel paid booking. Please contact support.",
+        });
       }
 
       const result = await bookingsCollection.deleteOne({
