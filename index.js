@@ -618,69 +618,74 @@ async function run() {
       verifyToken,
       verifyAdmin,
       async (req, res) => {
-        const totalRevenue = await paymentsCollection
-          .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
-          .toArray();
+        try {
+          const totalRevenue = await paymentsCollection
+            .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
+            .toArray();
 
-        const totalBookings = await bookingsCollection.countDocuments();
-        const paidBookings = await bookingsCollection.countDocuments({
-          isPaid: true,
-        });
-        const totalUsers = await usersCollection.countDocuments({
-          role: "user",
-        });
-        const totalDecorators = await usersCollection.countDocuments({
-          role: "decorator",
-        });
+          const totalBookings = await bookingsCollection.countDocuments();
+          const paidBookings = await bookingsCollection.countDocuments({
+            isPaid: true,
+          });
+          const totalUsers = await usersCollection.countDocuments({
+            role: "user",
+          });
+          const totalDecorators = await usersCollection.countDocuments({
+            role: "decorator",
+          });
 
-        // Service demand chart data
-        const serviceDemand = await bookingsCollection
-          .aggregate([
-            {
-              $lookup: {
-                from: "services",
-                localField: "serviceId",
-                foreignField: "_id",
-                as: "service",
-              },
-            },
-            { $unwind: "$service" },
-            {
-              $group: {
-                _id: "$service.service_name",
-                count: { $sum: 1 },
-              },
-            },
-            { $sort: { count: -1 } },
-            { $limit: 10 },
-          ])
-          .toArray();
-
-        // Monthly revenue
-        const monthlyRevenue = await paymentsCollection
-          .aggregate([
-            {
-              $group: {
-                _id: {
-                  month: { $month: "$createdAt" },
-                  year: { $year: "$createdAt" },
+          // Service demand chart data - FIXED to use serviceName directly
+          const serviceDemand = await bookingsCollection
+            .aggregate([
+              {
+                $group: {
+                  _id: "$serviceName",
+                  count: { $sum: 1 },
                 },
-                revenue: { $sum: "$amount" },
               },
-            },
-            { $sort: { "_id.year": 1, "_id.month": 1 } },
-          ])
-          .toArray();
+              { $sort: { count: -1 } },
+              { $limit: 10 },
+            ])
+            .toArray();
 
-        res.send({
-          totalRevenue: totalRevenue[0]?.total || 0,
-          totalBookings,
-          paidBookings,
-          totalUsers,
-          totalDecorators,
-          serviceDemand,
-          monthlyRevenue,
-        });
+          // Monthly revenue
+          const monthlyRevenue = await paymentsCollection
+            .aggregate([
+              {
+                $group: {
+                  _id: {
+                    month: { $month: "$createdAt" },
+                    year: { $year: "$createdAt" },
+                  },
+                  revenue: { $sum: "$amount" },
+                },
+              },
+              { $sort: { "_id.year": 1, "_id.month": 1 } },
+            ])
+            .toArray();
+
+          res.send({
+            totalRevenue: totalRevenue[0]?.total || 0,
+            totalBookings,
+            paidBookings,
+            totalUsers,
+            totalDecorators,
+            serviceDemand,
+            monthlyRevenue,
+          });
+        } catch (error) {
+          console.error("Analytics error:", error);
+          res.status(500).send({
+            message: "Error fetching analytics",
+            totalRevenue: 0,
+            totalBookings: 0,
+            paidBookings: 0,
+            totalUsers: 0,
+            totalDecorators: 0,
+            serviceDemand: [],
+            monthlyRevenue: [],
+          });
+        }
       }
     );
 
