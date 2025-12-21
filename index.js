@@ -92,7 +92,7 @@ async function run() {
   try {
     // Check if already connected (for serverless function reuse)
     if (!isConnected) {
-      // await client.connect();
+      await client.connect();
       isConnected = true;
       // console.log("Connected to MongoDB!");
     } else {
