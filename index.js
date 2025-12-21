@@ -907,7 +907,6 @@ app.get("/", (req, res) => {
 });
 
 // Export for Vercel serverless functions
-export default app;
 
 // Only listen in development
 if (process.env.NODE_ENV !== "production") {
