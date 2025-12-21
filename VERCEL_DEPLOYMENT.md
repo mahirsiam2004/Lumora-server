@@ -68,3 +68,4 @@ You should get: `{"status":"OK","timestamp":"..."}`
    - Update `CLIENT_URL` environment variable in Vercel
    - Check that your frontend URL is in the CORS origins list
 
+
