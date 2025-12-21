@@ -810,6 +810,6 @@ app.get("/", (req, res) => {
   res.send("Lumora Server is running");
 });
 
-app.listen(port, () => {
-  console.log(`Lumora server running on port ${port}`);
-});
+// app.listen(port, () => {
+//   console.log(`Lumora server running on port ${port}`);
+// });
