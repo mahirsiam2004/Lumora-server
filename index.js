@@ -86,7 +86,7 @@ let reviewsCollection;
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     console.log("Connected to MongoDB!");
 
     const database = client.db("lumoraDB");
@@ -810,6 +810,6 @@ app.get("/", (req, res) => {
   res.send("Lumora Server is running");
 });
 
-// app.listen(port, () => {
-//   console.log(`Lumora server running on port ${port}`);
-// });
+app.listen(port, () => {
+  console.log(`Lumora server running on port ${port}`);
+});
