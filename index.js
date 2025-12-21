@@ -92,9 +92,9 @@ async function run() {
   try {
     // Check if already connected (for serverless function reuse)
     if (!isConnected) {
-      // await client.connect();
+      await client.connect();
       isConnected = true;
-      // console.log("Connected to MongoDB!");
+      console.log("Connected to MongoDB!");
     } else {
       console.log("Using existing MongoDB connection");
     }
@@ -804,21 +804,89 @@ async function run() {
 
       res.send(reviews);
     });
-
-    // Health check
-    app.get("/health", (req, res) => {
-      res.send({ status: "OK", timestamp: new Date() });
-    });
   } catch (error) {
     console.error("MongoDB connection error:", error);
   }
 }
 
-run().catch(console.dir);
-
+// Root route (available immediately)
 app.get("/", (req, res) => {
   res.send("Lumora Server is running");
 });
+
+// Health check route (available immediately)
+app.get("/health", (req, res) => {
+  res.send({
+    status: "OK",
+    timestamp: new Date(),
+    mongoConnected: isConnected,
+  });
+});
+
+// Test route to verify routing works (available immediately)
+app.get("/test", (req, res) => {
+  res.send({
+    message: "Test route works",
+    routesRegistered: global.routesRegistered || false,
+    mongoConnected: isConnected,
+  });
+});
+
+// Middleware to ensure MongoDB is connected and collections initialized before handling API requests
+app.use("/api", async (req, res, next) => {
+  if (!isConnected || !servicesCollection) {
+    // Try to connect if not connected
+    try {
+      if (!isConnected) {
+        await client.connect();
+        isConnected = true;
+        console.log("MongoDB connected via middleware");
+      }
+
+      // Initialize collections if not already done
+      if (!servicesCollection) {
+        const database = client.db("lumoraDB");
+        usersCollection = database.collection("users");
+        servicesCollection = database.collection("services");
+        bookingsCollection = database.collection("bookings");
+        paymentsCollection = database.collection("payments");
+        reviewsCollection = database.collection("reviews");
+        console.log("Collections initialized via middleware");
+      }
+    } catch (error) {
+      console.error("MongoDB connection error in middleware:", error);
+      return res
+        .status(503)
+        .send({ message: "Database connection failed", error: error.message });
+    }
+  }
+  next();
+});
+
+// Initialize MongoDB connection and register routes
+// This must complete for routes to be registered
+let routesRegistered = false;
+
+// Make routesRegistered available globally for test route
+global.routesRegistered = false;
+
+run()
+  .then(() => {
+    routesRegistered = true;
+    global.routesRegistered = true;
+    console.log("Routes registered successfully");
+  })
+  .catch((error) => {
+    console.error("Failed to initialize in run():", error);
+    // Even if run() fails, try to register basic routes
+    // This ensures at least some routes are available
+    if (!routesRegistered) {
+      console.log(
+        "Attempting to register routes despite initialization error..."
+      );
+      // Routes will be registered when run() completes or via middleware
+    }
+  });
 
 // Export for Vercel serverless functions
 export default app;
