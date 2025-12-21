@@ -11,10 +11,8 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Stripe - handle missing key gracefully
-const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY)
-  : null;
+// Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Middleware
 app.use(
@@ -31,13 +29,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // MongoDB Connection
-let database;
-if (!process.env.DB_USER || !process.env.DB_PASS) {
-  console.warn("Warning: DB_USER or DB_PASS environment variables are not set");
-}
-const uri = `mongodb+srv://${process.env.DB_USER || ""}:${
-  process.env.DB_PASS || ""
-}@smart-deals.99va52p.mongodb.net/?appName=smart-deals`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@smart-deals.99va52p.mongodb.net/?appName=smart-deals`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -95,91 +87,32 @@ let paymentsCollection;
 let reviewsCollection;
 
 let isConnected = false;
-let connectionPromise = null;
-let initializationPromise = null;
-
-// Initialize MongoDB connection
-async function connectDB() {
-  if (isConnected) {
-    return;
-  }
-
-  if (connectionPromise) {
-    return connectionPromise;
-  }
-
-  connectionPromise = (async () => {
-    try {
-      if (!isConnected) {
-        // await client.connect();
-        isConnected = true;
-        console.log("Connected to MongoDB!");
-      }
-
-      database = client.db("lumoraDB");
-      usersCollection = database.collection("users");
-      servicesCollection = database.collection("services");
-      bookingsCollection = database.collection("bookings");
-      paymentsCollection = database.collection("payments");
-      reviewsCollection = database.collection("reviews");
-
-      // Create indexes (only if not exists)
-      try {
-        await servicesCollection.createIndex({
-          service_name: "text",
-          description: "text",
-        });
-        await bookingsCollection.createIndex({ userEmail: 1 });
-        await bookingsCollection.createIndex({ decoratorEmail: 1 });
-      } catch (indexError) {
-        // Indexes might already exist, ignore error
-        console.log(
-          "Indexes already exist or error creating:",
-          indexError.message
-        );
-      }
-    } catch (error) {
-      console.error("MongoDB connection error:", error);
-      isConnected = false;
-      connectionPromise = null;
-      throw error;
-    }
-  })();
-
-  return connectionPromise;
-}
-
-// Initialize database connection and register routes
-const initializeApp = async () => {
-  if (initializationPromise) {
-    return initializationPromise;
-  }
-
-  initializationPromise = run().catch((error) => {
-    console.error("Failed to initialize server:", error);
-    initializationPromise = null; // Reset on error to allow retry
-    throw error;
-  });
-
-  return initializationPromise;
-};
-
-// Global middleware to ensure DB connection and routes are initialized
-app.use(async (req, res, next) => {
-  try {
-    // Ensure initialization happens
-    await initializeApp();
-    next();
-  } catch (error) {
-    console.error("Initialization error in middleware:", error);
-    res.status(500).send({ message: "Server initialization failed" });
-  }
-});
 
 async function run() {
   try {
-    // Initialize connection
-    await connectDB();
+    // Check if already connected (for serverless function reuse)
+    if (!isConnected) {
+      // await client.connect();
+      isConnected = true;
+      // console.log("Connected to MongoDB!");
+    } else {
+      console.log("Using existing MongoDB connection");
+    }
+
+    const database = client.db("lumoraDB");
+    usersCollection = database.collection("users");
+    servicesCollection = database.collection("services");
+    bookingsCollection = database.collection("bookings");
+    paymentsCollection = database.collection("payments");
+    reviewsCollection = database.collection("reviews");
+
+    // Create indexes
+    await servicesCollection.createIndex({
+      service_name: "text",
+      description: "text",
+    });
+    await bookingsCollection.createIndex({ userEmail: 1 });
+    await bookingsCollection.createIndex({ decoratorEmail: 1 });
 
     // ==================== AUTH ROUTES ====================
 
@@ -605,9 +538,6 @@ async function run() {
 
     // Create Payment Intent
     app.post("/api/create-payment-intent", verifyToken, async (req, res) => {
-      if (!stripe) {
-        return res.status(500).send({ message: "Stripe is not configured" });
-      }
       const { amount } = req.body;
       const amountInCents = Math.round(amount * 100);
 
@@ -663,9 +593,6 @@ async function run() {
     // Create Checkout Session
     app.post("/api/create-checkout-session", verifyToken, async (req, res) => {
       try {
-        if (!stripe) {
-          return res.status(500).send({ message: "Stripe is not configured" });
-        }
         const { bookingId, amount, serviceName, userEmail } = req.body;
 
         const session = await stripe.checkout.sessions.create({
@@ -703,9 +630,6 @@ async function run() {
     // Verify Payment and Update Booking
     app.post("/api/verify-payment", verifyToken, async (req, res) => {
       try {
-        if (!stripe) {
-          return res.status(500).send({ message: "Stripe is not configured" });
-        }
         const { sessionId, bookingId } = req.body;
 
         // Retrieve the session from Stripe
@@ -883,30 +807,21 @@ async function run() {
 
     // Health check
     app.get("/health", (req, res) => {
-      res.send({
-        status: "OK",
-        timestamp: new Date(),
-        dbConnected: isConnected,
-      });
+      res.send({ status: "OK", timestamp: new Date() });
     });
   } catch (error) {
     console.error("MongoDB connection error:", error);
   }
 }
 
-// Export initializeApp for use if needed
-export { initializeApp };
-
-// Start initialization (non-blocking) - this will register routes
-initializeApp().catch(() => {
-  // Error logged in initializeApp
-});
+run().catch(console.dir);
 
 app.get("/", (req, res) => {
   res.send("Lumora Server is running");
 });
 
 // Export for Vercel serverless functions
+export default app;
 
 // Only listen in development
 if (process.env.NODE_ENV !== "production") {
