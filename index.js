@@ -90,13 +90,11 @@ let isConnected = false;
 
 async function run() {
   try {
-    // Check if already connected (for serverless function reuse)
+    // CRITICAL FIX: Uncomment this line for Vercel
     if (!isConnected) {
       await client.connect();
       isConnected = true;
-      // console.log("Connected to MongoDB!");
-    } else {
-      console.log("Using existing MongoDB connection");
+      console.log("Connected to MongoDB!");
     }
 
     const database = client.db("lumoraDB");
@@ -605,7 +603,7 @@ async function run() {
                   name: serviceName,
                   description: "Professional Decoration Service",
                 },
-                unit_amount: Math.round(amount * 100), // Convert to cents
+                unit_amount: Math.round(amount * 100),
               },
               quantity: 1,
             },
@@ -632,11 +630,9 @@ async function run() {
       try {
         const { sessionId, bookingId } = req.body;
 
-        // Retrieve the session from Stripe
         const session = await stripe.checkout.sessions.retrieve(sessionId);
 
         if (session.payment_status === "paid") {
-          // Save payment record
           const payment = {
             bookingId,
             userEmail: session.customer_email,
@@ -648,7 +644,6 @@ async function run() {
 
           const paymentResult = await paymentsCollection.insertOne(payment);
 
-          // Update booking
           await bookingsCollection.updateOne(
             { _id: new ObjectId(bookingId) },
             {
@@ -728,7 +723,6 @@ async function run() {
             role: "decorator",
           });
 
-          // Service demand chart data - FIXED to use serviceName directly
           const serviceDemand = await bookingsCollection
             .aggregate([
               {
@@ -742,7 +736,6 @@ async function run() {
             ])
             .toArray();
 
-          // Monthly revenue
           const monthlyRevenue = await paymentsCollection
             .aggregate([
               {
@@ -820,12 +813,5 @@ app.get("/", (req, res) => {
   res.send("Lumora Server is running");
 });
 
-// Export for Vercel serverless functions
+// CRITICAL: Export for Vercel serverless
 export default app;
-
-// Only listen in development
-if (process.env.NODE_ENV !== "production") {
-  app.listen(port, () => {
-    console.log(`Lumora server running on port ${port}`);
-  });
-}
