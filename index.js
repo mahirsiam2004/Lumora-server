@@ -25,6 +25,73 @@ app.use(
     credentials: true,
   })
 );
+
+// Stripe webhook needs raw body, so we handle it before JSON middleware
+app.post(
+  "/api/webhook/stripe",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err) {
+      console.error("Webhook signature verification failed:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle the checkout.session.completed event
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+
+      try {
+        await ensureConnection();
+
+        // Check if payment already exists
+        const existingPayment = await paymentsCollection.findOne({
+          transactionId: session.payment_intent,
+        });
+
+        if (!existingPayment && session.payment_status === "paid") {
+          const payment = {
+            bookingId: session.metadata?.bookingId,
+            userEmail: session.customer_email,
+            amount: session.amount_total / 100,
+            transactionId: session.payment_intent,
+            serviceName: session.metadata?.serviceName || "Unknown Service",
+            createdAt: new Date(),
+          };
+
+          const paymentResult = await paymentsCollection.insertOne(payment);
+
+          if (session.metadata?.bookingId) {
+            await bookingsCollection.updateOne(
+              { _id: new ObjectId(session.metadata.bookingId) },
+              {
+                $set: {
+                  isPaid: true,
+                  paymentId: paymentResult.insertedId.toString(),
+                  paidAt: new Date(),
+                },
+              }
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Webhook processing error:", error);
+        return res.status(500).send("Webhook processing failed");
+      }
+    }
+
+    res.json({ received: true });
+  }
+);
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -680,20 +747,40 @@ app.post("/api/create-checkout-session", verifyToken, async (req, res) => {
   }
 });
 
-// Verify Payment and Update Booking
+// Verify Payment and Update Booking (Client-side verification)
 app.post("/api/verify-payment", ensureDB, verifyToken, async (req, res) => {
   try {
     const { sessionId, bookingId } = req.body;
 
+    if (!sessionId || !bookingId) {
+      return res.status(400).send({
+        success: false,
+        message: "Missing sessionId or bookingId",
+      });
+    }
+
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.payment_status === "paid") {
+      // Check if payment already exists
+      const existingPayment = await paymentsCollection.findOne({
+        transactionId: session.payment_intent,
+      });
+
+      if (existingPayment) {
+        return res.send({
+          success: true,
+          payment: existingPayment,
+          message: "Payment already verified",
+        });
+      }
+
       const payment = {
         bookingId,
         userEmail: session.customer_email,
         amount: session.amount_total / 100,
         transactionId: session.payment_intent,
-        serviceName: session.metadata.serviceName,
+        serviceName: session.metadata?.serviceName || "Unknown Service",
         createdAt: new Date(),
       };
 
@@ -718,9 +805,11 @@ app.post("/api/verify-payment", ensureDB, verifyToken, async (req, res) => {
     }
   } catch (error) {
     console.error("Payment verification error:", error);
-    res
-      .status(500)
-      .send({ success: false, message: "Failed to verify payment" });
+    res.status(500).send({
+      success: false,
+      message: "Failed to verify payment",
+      error: error.message,
+    });
   }
 });
 
