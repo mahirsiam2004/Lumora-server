@@ -2,10 +2,10 @@
   "name": "lumora-server",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
+  "main": "api/index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node api/index.js",
+    "dev": "nodemon api/index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -13,10 +13,12 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.1",
     "jsonwebtoken": "^9.0.2",
-    "stripe": "^14.15.0",
-    "cookie-parser": "^1.4.6"
+    "stripe": "^14.15.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.x"
   }
 }
