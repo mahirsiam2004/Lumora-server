@@ -37,6 +37,8 @@ const client = new MongoClient(uri, {
     strict: false,
     deprecationErrors: true,
   },
+  maxPoolSize: 10,
+  minPoolSize: 1,
 });
 
 // JWT Verification Middleware
@@ -84,10 +86,18 @@ let bookingsCollection;
 let paymentsCollection;
 let reviewsCollection;
 
+let isConnected = false;
+
 async function run() {
   try {
-    // await client.connect();
-    console.log("Connected to MongoDB!");
+    // Check if already connected (for serverless function reuse)
+    if (!isConnected) {
+      await client.connect();
+      isConnected = true;
+      console.log("Connected to MongoDB!");
+    } else {
+      console.log("Using existing MongoDB connection");
+    }
 
     const database = client.db("lumoraDB");
     usersCollection = database.collection("users");
@@ -810,6 +820,12 @@ app.get("/", (req, res) => {
   res.send("Lumora Server is running");
 });
 
-app.listen(port, () => {
-  console.log(`Lumora server running on port ${port}`);
-});
+// Export for Vercel serverless functions
+export default app;
+
+// Only listen in development
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, () => {
+    console.log(`Lumora server running on port ${port}`);
+  });
+}
