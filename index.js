@@ -580,6 +580,90 @@ async function run() {
       res.send(payments);
     });
 
+    // Create Checkout Session
+    app.post("/api/create-checkout-session", verifyToken, async (req, res) => {
+      try {
+        const { bookingId, amount, serviceName, userEmail } = req.body;
+
+        const session = await stripe.checkout.sessions.create({
+          payment_method_types: ["card"],
+          line_items: [
+            {
+              price_data: {
+                currency: "bdt",
+                product_data: {
+                  name: serviceName,
+                  description: "Professional Decoration Service",
+                },
+                unit_amount: Math.round(amount * 100), // Convert to cents
+              },
+              quantity: 1,
+            },
+          ],
+          mode: "payment",
+          success_url: `${process.env.CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${bookingId}`,
+          cancel_url: `${process.env.CLIENT_URL}/payment/cancel?booking_id=${bookingId}`,
+          customer_email: userEmail,
+          metadata: {
+            bookingId: bookingId,
+            serviceName: serviceName,
+          },
+        });
+
+        res.send({ sessionId: session.id, url: session.url });
+      } catch (error) {
+        console.error("Checkout session error:", error);
+        res.status(500).send({ message: "Failed to create checkout session" });
+      }
+    });
+
+    // Verify Payment and Update Booking
+    app.post("/api/verify-payment", verifyToken, async (req, res) => {
+      try {
+        const { sessionId, bookingId } = req.body;
+
+        // Retrieve the session from Stripe
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        if (session.payment_status === "paid") {
+          // Save payment record
+          const payment = {
+            bookingId,
+            userEmail: session.customer_email,
+            amount: session.amount_total / 100,
+            transactionId: session.payment_intent,
+            serviceName: session.metadata.serviceName,
+            createdAt: new Date(),
+          };
+
+          const paymentResult = await paymentsCollection.insertOne(payment);
+
+          // Update booking
+          await bookingsCollection.updateOne(
+            { _id: new ObjectId(bookingId) },
+            {
+              $set: {
+                isPaid: true,
+                paymentId: paymentResult.insertedId.toString(),
+                paidAt: new Date(),
+              },
+            }
+          );
+
+          res.send({ success: true, payment });
+        } else {
+          res
+            .status(400)
+            .send({ success: false, message: "Payment not completed" });
+        }
+      } catch (error) {
+        console.error("Payment verification error:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to verify payment" });
+      }
+    });
+
     // Get Decorator Earnings
     app.get(
       "/api/payments/decorator/:email",
