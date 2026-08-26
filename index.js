@@ -152,6 +152,8 @@ let servicesCollection;
 let bookingsCollection;
 let paymentsCollection;
 let reviewsCollection;
+let siteSettingsCollection;
+let promotionsCollection;
 
 let isConnected = false;
 let connectionPromise = null;
@@ -173,6 +175,26 @@ async function ensureConnection() {
         bookingsCollection = database.collection("bookings");
         paymentsCollection = database.collection("payments");
         reviewsCollection = database.collection("reviews");
+        siteSettingsCollection = database.collection("siteSettings");
+        promotionsCollection = database.collection("promotions");
+
+        // Singleton site settings seed (created once if missing)
+        const settingsCount = await siteSettingsCollection.countDocuments();
+        if (settingsCount === 0) {
+          await siteSettingsCollection.insertOne({
+            primary: "#8CC0EB",
+            accent: "#5B9BD5",
+            text: "#14202C",
+            bg: "#FFF9D2",
+            cream: "#FFF9D2",
+            peach: "#FFEBCC",
+            skysoft: "#BFDDF0",
+            logoUrl: "",
+            brandName: "Lumora",
+            updatedAt: new Date(),
+          });
+        }
+        await promotionsCollection.createIndex({ active: 1 });
 
         // Create indexes
         await servicesCollection.createIndex({
@@ -949,6 +971,204 @@ app.get("/api/reviews/service/:serviceId", ensureDB, async (req, res) => {
 
   res.send(reviews);
 });
+
+// ==================== SITE SETTINGS ROUTES ====================
+// Public: anyone can read the current site settings (colors, logo, brand)
+app.get("/api/site-settings", ensureDB, async (req, res) => {
+  try {
+    const settings = await siteSettingsCollection.findOne({});
+    if (!settings) {
+      return res.send({
+        primary: "#8CC0EB",
+        accent: "#5B9BD5",
+        text: "#14202C",
+        bg: "#FFF9D2",
+        cream: "#FFF9D2",
+        peach: "#FFEBCC",
+        skysoft: "#BFDDF0",
+        logoUrl: "",
+        brandName: "Lumora",
+      });
+    }
+    res.send(settings);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to load site settings" });
+  }
+});
+
+// Admin only: update the site settings (singleton document)
+app.put(
+  "/api/site-settings",
+  ensureDB,
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const body = req.body || {};
+      const allowed = {
+        primary: body.primary,
+        accent: body.accent,
+        text: body.text,
+        bg: body.bg,
+        cream: body.cream,
+        peach: body.peach,
+        skysoft: body.skysoft,
+        logoUrl: body.logoUrl,
+        brandName: body.brandName,
+        updatedAt: new Date(),
+      };
+      // Strip undefined keys so we always keep existing values
+      Object.keys(allowed).forEach((k) => {
+        if (allowed[k] === undefined) delete allowed[k];
+      });
+      const result = await siteSettingsCollection.updateOne(
+        {},
+        { $set: allowed },
+        { upsert: true }
+      );
+      const updated = await siteSettingsCollection.findOne({});
+      res.send({ message: "Site settings updated", settings: updated, result });
+    } catch (error) {
+      console.error("Update settings error:", error);
+      res.status(500).send({ message: "Failed to update site settings" });
+    }
+  }
+);
+
+// ==================== PROMOTIONS ROUTES ====================
+// Public: get the single active promotion for the auto-open modal
+app.get("/api/promotions/active", ensureDB, async (req, res) => {
+  try {
+    const now = new Date();
+    const promo = await promotionsCollection.findOne({
+      active: true,
+      $and: [
+        {
+          $or: [
+            { startDate: { $exists: false } },
+            { startDate: null },
+            { startDate: { $lte: now } },
+          ],
+        },
+        {
+          $or: [
+            { endDate: { $exists: false } },
+            { endDate: null },
+            { endDate: { $gte: now } },
+          ],
+        },
+      ],
+    });
+    res.send(promo || null);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to load promotion" });
+  }
+});
+
+// Admin only: list all promotions
+app.get(
+  "/api/promotions",
+  ensureDB,
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const list = await promotionsCollection
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(list);
+    } catch (error) {
+      res.status(500).send({ message: "Failed to load promotions" });
+    }
+  }
+);
+
+// Admin only: create a promotion
+app.post(
+  "/api/promotions",
+  ensureDB,
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const promo = {
+        title: req.body.title || "Special Offer",
+        message: req.body.message || "",
+        imageUrl: req.body.imageUrl || "",
+        ctaText: req.body.ctaText || "Learn more",
+        ctaLink: req.body.ctaLink || "",
+        active: req.body.active !== false,
+        startDate: req.body.startDate ? new Date(req.body.startDate) : null,
+        endDate: req.body.endDate ? new Date(req.body.endDate) : null,
+        createdAt: new Date(),
+      };
+      const result = await promotionsCollection.insertOne(promo);
+      res.send({ message: "Promotion created", promotion: promo, result });
+    } catch (error) {
+      res.status(500).send({ message: "Failed to create promotion" });
+    }
+  }
+);
+
+// Admin only: update a promotion
+app.put(
+  "/api/promotions/:id",
+  ensureDB,
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const id = req.params.id;
+      const update = {};
+      [
+        "title",
+        "message",
+        "imageUrl",
+        "ctaText",
+        "ctaLink",
+        "active",
+        "startDate",
+        "endDate",
+      ].forEach((k) => {
+        if (req.body[k] !== undefined) {
+          update[k] =
+            k === "startDate" || k === "endDate"
+              ? req.body[k]
+                ? new Date(req.body[k])
+                : null
+              : req.body[k];
+        }
+      });
+      const result = await promotionsCollection.updateOne(
+        { _id: new (await import("mongodb")).ObjectId(id) },
+        { $set: update }
+      );
+      res.send({ message: "Promotion updated", result });
+    } catch (error) {
+      res.status(500).send({ message: "Failed to update promotion" });
+    }
+  }
+);
+
+// Admin only: delete a promotion
+app.delete(
+  "/api/promotions/:id",
+  ensureDB,
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const id = req.params.id;
+      const result = await promotionsCollection.deleteOne({
+        _id: new (await import("mongodb")).ObjectId(id),
+      });
+      res.send({ message: "Promotion deleted", result });
+    } catch (error) {
+      res.status(500).send({ message: "Failed to delete promotion" });
+    }
+  }
+);
 
 // Health check
 app.get("/health", (req, res) => {
